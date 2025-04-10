@@ -1,0 +1,38 @@
+services:
+  orders:
+    build: .
+    ports:
+      - "8083:8083"
+    env_file: .env
+    volumes:
+      - /var/log:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    networks:
+      - orders_network
+
+  db:
+    image: mysql:8.0-oracle
+    volumes:
+      - orders_data:/var/lib/mysql
+      - ./db/dump:/docker-entrypoint-initdb.d
+    env_file: .env
+    ports:
+      - "3307:3306"
+    restart: always
+    networks:
+      - orders_network
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 5s
+      retries: 10
+
+volumes:
+  orders_data:
+
+networks:
+  orders_network:
+
+
