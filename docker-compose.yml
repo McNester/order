@@ -1,8 +1,10 @@
 services:
   orders:
-    build: .
+    build:
+      context: ..
+      dockerfile: order/dockerfile
     ports:
-      - "8083:8083"
+      - "50052:50052"
     env_file: .env
     volumes:
       - /var/log:/app/logs

@@ -1,149 +1,140 @@
 package handlers
 
 import (
-	"net/http"
+	pb "cloud_commons/order"
+	"context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"orders/models"
 	"orders/services"
-	"strconv"
-
-	"github.com/gin-gonic/gin"
 )
 
 type OrderHandler struct {
 	service *services.OrderService
+	pb.UnimplementedOrderServiceServer
 }
 
 func NewOrderHandler() *OrderHandler {
 	return &OrderHandler{service: services.NewOrderService()}
 }
 
-func (h *OrderHandler) SaveOrder(c *gin.Context) {
+func (h *OrderHandler) Save(ctx context.Context, req *pb.Order) (*pb.Order, error) {
 
-	order := models.Order{}
-
-	if err := c.ShouldBind(&order); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Wrong body for order",
-		})
-		return
+	order := models.Order{
+		Id:        req.Id,
+		Status:    req.Status,
+		Quantity:  req.Quantity,
+		ProductID: req.ProductId,
 	}
 
 	savedOrder, err := h.service.SaveOrder(&order)
-
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
+		return nil, status.Errorf(
+			codes.Internal,
+			"Failed to save the order: %v",
+			err.Error())
 	}
 
-	c.JSON(http.StatusOK, savedOrder)
-
+	return &pb.Order{
+		Id:        savedOrder.Id,
+		Status:    savedOrder.Status,
+		Quantity:  savedOrder.Quantity,
+		ProductId: savedOrder.ProductID,
+	}, nil
 }
 
-func (h *OrderHandler) UpdateOrder(c *gin.Context) {
+func (h *OrderHandler) Update(ctx context.Context, req *pb.Order) (*pb.Order, error) {
+	if req.Id == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Order ID is required")
+	}
 
-	idParam := c.Param("id")
+	order := models.Order{
+		Id:        req.Id,
+		Status:    req.Status,
+		Quantity:  req.Quantity,
+		ProductID: req.ProductId,
+	}
 
-	id, err := strconv.ParseUint(idParam, 10, 64)
-
+	updatedOrder, err := h.service.UpdateOrder(req.Id, &order)
 	if err != nil {
-		c.JSON(http.StatusBadRequest,
-			gin.H{
-				"error": "Wrong id!",
-			})
-		return
+		return nil, status.Errorf(
+			codes.Internal,
+			"Failed to update the order: %v",
+			err.Error())
 	}
 
-	order := models.Order{}
-
-	if err := c.ShouldBind(&order); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Wrong body for order",
-		})
-		return
-	}
-
-	updatedOrder, err := h.service.UpdateOrder(id, &order)
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, updatedOrder)
-
+	return &pb.Order{
+		Id:        updatedOrder.Id,
+		Status:    updatedOrder.Status,
+		Quantity:  updatedOrder.Quantity,
+		ProductId: updatedOrder.ProductID,
+	}, nil
 }
 
-func (h *OrderHandler) GetOrder(c *gin.Context) {
-	idParam := c.Param("id")
-
-	id, err := strconv.ParseUint(idParam, 10, 64)
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest,
-			gin.H{
-				"error": "Wrong id!",
-			})
-		return
+func (h *OrderHandler) Get(ctx context.Context, req *pb.OrderId) (*pb.Order, error) {
+	if req.Id == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Order ID is required")
 	}
 
-	order, err := h.service.GetOrder(id)
-
+	order, err := h.service.GetOrder(req.Id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError,
-			gin.H{
-				"error": err.Error(),
-			})
-		return
+		return nil, status.Errorf(
+			codes.Internal,
+			"Failed to get the order: %v",
+			err.Error())
 	}
 
-	c.JSON(http.StatusOK, order)
-
+	return &pb.Order{
+		Id:        order.Id,
+		Status:    order.Status,
+		Quantity:  order.Quantity,
+		ProductId: order.ProductID,
+	}, nil
 }
 
-func (h *OrderHandler) ListOrders(c *gin.Context) {
+func (h *OrderHandler) List(req *pb.NoParams, stream pb.OrderService_ListServer) error {
+
 	orders, err := h.service.ListOrder()
-
 	if err != nil {
-		c.JSON(http.StatusInternalServerError,
-			gin.H{
-				"error": err.Error(),
-			})
-		return
+		return status.Errorf(
+			codes.Internal,
+			"Failed to list the orders: %v",
+			err.Error())
 	}
 
-	c.JSON(http.StatusOK, orders)
+	for _, order := range orders {
+		pbOrder := &pb.Order{
+			Id:        order.Id,
+			Status:    order.Status,
+			Quantity:  order.Quantity,
+			ProductId: order.ProductID,
+		}
 
+		if err := stream.Send(pbOrder); err != nil {
+			return status.Errorf(
+				codes.Internal,
+				"Failed to send order: %v",
+				err.Error())
+		}
+	}
+
+	return nil
 }
 
-func (h *OrderHandler) DeleteOrder(c *gin.Context) {
-
-	idParam := c.Param("id")
-
-	id, err := strconv.ParseUint(idParam, 10, 64)
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest,
-			gin.H{
-				"error": "Wrong id!",
-			})
-		return
+func (h *OrderHandler) Delete(ctx context.Context, req *pb.OrderId) (*pb.DeleteResponse, error) {
+	if req.Id == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Order ID is required")
 	}
 
-	err = h.service.DeleteOrder(id)
-
+	err := h.service.DeleteOrder(req.Id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
+		return nil, status.Errorf(
+			codes.Internal,
+			"Failed to delete the order: %v",
+			err.Error())
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Successfully deleted the order",
-	})
-
+	return &pb.DeleteResponse{
+		Message: "Successfully deleted the order",
+	}, nil
 }
